@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Test coverage
+coverage/
+
+# Cache
+.cache/
+*.tsbuildinfo
+
+# Project context (keep only README)
+CHANGELOG.md
+IMPLEMENTATION_SUMMARY.md
+PHASE*.md
+PHASE*.txt
+PROJECT_STATUS.txt
+QUICK_START.md
