@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
 /**
- * Test harness_bridge by starting a session and asking Claude who it is
+ * Test reins by starting a session and asking Claude who it is
  */
 
 const { spawn } = await import("child_process");
 
-const ARGS = ["/home/agi01/.openclaw/workspace-claude-code/harness_bridge/dist/cli.js"];
+const ARGS = ["/home/agi01/.openclaw/workspace-claude-code/reins/dist/cli.js"];
 let sessionId = null;
 
 // Start the MCP server as a child process

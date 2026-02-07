@@ -2,24 +2,27 @@
 
 /**
  * Simple MCP Client Test
- * Tests harness_bridge server by sending JSON-RPC messages over stdio
+ * Tests reins server by sending JSON-RPC messages over stdio
  */
 
-const { spawn } = await import("child_process");
+import { spawn } from "child_process";
 
 const CLAUDE_COMMAND = "node";
-const ARGS = ["/home/agi01/.openclaw/workspace-claude-code/harness_bridge/dist/cli.js"];
+const ARGS = ["/home/agi01/.openclaw/workspace-claude-code/reins/dist/cli.js"];
 
 // Start the MCP server as a child process
 const child = spawn(CLAUDE_COMMAND, ARGS, {
   stdio: ["pipe", "pipe", "pipe"],
 });
 
+let output = "";
 child.stdout?.on("data", (data) => {
+  output += data.toString();
   process.stdout.write(data.toString());
 });
 
 child.stderr?.on("data", (data) => {
+  output += data.toString();
   process.stderr.write(data.toString());
 });
 

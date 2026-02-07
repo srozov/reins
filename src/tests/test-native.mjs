@@ -9,7 +9,7 @@ const { spawn } = await import("child_process");
 // First, create a new session
 console.log("=== Step 1: Create a new session ===\n");
 
-const createProcess = spawn("node", ["/home/agi01/.openclaw/workspace-claude-code/harness_bridge/dist/cli.js"], {
+const createProcess = spawn("node", ["/home/agi01/.openclaw/workspace-claude-code/reins/dist/cli.js"], {
   stdio: ["pipe", "pipe", "pipe"]
 });
 
@@ -51,7 +51,7 @@ console.log("\n=== Session created ===\n");
 // Now test listing and reading sessions
 console.log("=== Step 2: List sessions ===\n");
 
-const listProcess = spawn("node", ["/home/agi01/.openclaw/workspace-claude-code/harness_bridge/dist/cli.js"], {
+const listProcess = spawn("node", ["/home/agi01/.openclaw/workspace-claude-code/reins/dist/cli.js"], {
   stdio: ["pipe", "pipe", "pipe"]
 });
 

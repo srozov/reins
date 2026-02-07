@@ -8,7 +8,7 @@ const { spawn } = await import("child_process");
 
 const SESSION_ID = "09eab4d8-2228-4bc1-a2f1-c665ce8ec223";
 
-const child = spawn("node", ["/home/agi01/.openclaw/workspace-claude-code/harness_bridge/dist/cli.js"], {
+const child = spawn("node", ["/home/agi01/.openclaw/workspace-claude-code/reins/dist/cli.js"], {
   stdio: ["pipe", "pipe", "pipe"],
 });
 
