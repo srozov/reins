@@ -1,6 +1,6 @@
 {
   "name": "@srozov/reins",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "description": "Universal MCP adapter for CLI-based coding agents (Claude Code, Codex, OpenCode). Control and orchestrate AI coding harnesses via MCP.",
   "type": "module",
   "main": "dist/index.js",
@@ -24,7 +24,7 @@
     "harness",
     "agent-framework"
   ],
-  "author": "AGI01",
+  "author": "srozov",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.3.0"
