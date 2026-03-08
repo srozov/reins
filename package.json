@@ -1,5 +1,5 @@
 {
-  "name": "@agi01/reins",
+  "name": "@srozov/reins",
   "version": "0.2.0",
   "description": "Universal MCP adapter for CLI-based coding agents (Claude Code, Codex, OpenCode). Control and orchestrate AI coding harnesses via MCP.",
   "type": "module",

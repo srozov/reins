@@ -26,13 +26,7 @@ MCP Host → Reins → Claude Code CLI → Code Execution
 
 ### Why "Reins"?
 
-Just as a driver holds the **reins** to control a horse, Reins holds the reins to control Claude Code:
-
-| Analogy | Meaning |
-|---------|---------|
-| Reins | The straps you hold to steer/control |
-| упряжка (Russian) | The harness, tack, or gear |
-| Santa's reindeer | Controlled by reins |
+Just as a driver holds the **reins** to control a horse, an mcp-capable agent can hold the reins to control another agent.
 
 The name reflects:
 1. **Control** - You hold the reins, you control the output
@@ -50,7 +44,7 @@ The name reflects:
 ## Installation
 
 ```bash
-npm install -g @agi01/reins
+npm install -g @srozov/reins
 ```
 
 ## Usage
@@ -58,7 +52,7 @@ npm install -g @agi01/reins
 ### As MCP Server (stdio)
 
 ```bash
-npx @agi01/reins --transport stdio
+reins
 ```
 
 Add to your MCP configuration:
@@ -67,8 +61,20 @@ Add to your MCP configuration:
 {
   "mcpServers": {
     "reins": {
+      "command": "reins"
+    }
+  }
+}
+```
+
+Or without global install:
+
+```json
+{
+  "mcpServers": {
+    "reins": {
       "command": "npx",
-      "args": ["@agi01/reins"]
+      "args": ["-y", "@srozov/reins"]
     }
   }
 }
@@ -77,7 +83,7 @@ Add to your MCP configuration:
 ### Programmatic API
 
 ```typescript
-import { createReins } from "@agi01/reins";
+import { createReins } from "@srozov/reins";
 
 const reins = await createReins({
   sessionsDir: "~/.claude/sessions",
@@ -339,7 +345,7 @@ Reins doesn't manage sessions itself - it **leverages Claude Code's native sessi
 
 **stdio** (default)
 ```bash
-npx @agi01/reins
+npx @srozov/reins
 ```
 - Standard input/output transport
 - Works in all environments (local, container, CI/CD)
@@ -349,7 +355,7 @@ npx @agi01/reins
 
 **HTTP**
 ```bash
-npx @agi01/reins --transport http --port 3000
+npx @srozov/reins --transport http --port 3000
 ```
 - REST API endpoints for session management
 - Useful for remote process spawning
@@ -357,41 +363,24 @@ npx @agi01/reins --transport http --port 3000
 
 **WebSocket**
 ```bash
-npx @agi01/reins --transport websocket --port 3001
+npx @srozov/reins --transport websocket --port 3001
 ```
 - Bidirectional real-time communication
 - Enables multi-client connections
 - Requires `ws` package
 
 ---
-
-## Roadmap
-
-### Phase 1: MVP (v0.1.0) ✅
-- Claude Code adapter
-- stdio transport
-- Plan/execute modes
-- Session management
-- Basic MCP tools
-
-### Phase 2: Polish (v0.2.0)
-- ✅ Structured error handling (error codes)
-- ✅ Unit tests (24+ tests)
-- HTTP/WebSocket transports (planned)
-
-### Phase 3: Extensibility (v0.3.0)
-- Codex CLI adapter
-- OpenCode CLI adapter
-- Plugin architecture
-
 ## Development
 
 ```bash
-# Install
+# Install dependencies
 npm install
 
 # Build
 npm run build
+
+# Install globally (run after build)
+npm install -g . --force
 
 # Watch mode
 npm run watch
