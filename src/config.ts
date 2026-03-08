@@ -2,7 +2,7 @@
  * Configuration Management - Parse and manage application configuration
  */
 
-import { BridgeConfig, TransportConfig, LogLevel, ToolPermission } from "./types.js";
+import { BridgeConfig, TransportConfig, LogLevel, ToolPermission, HarnessType } from "./types.js";
 import { getLogger } from "./utils/logger.js";
 
 const logger = getLogger("config");
@@ -13,6 +13,7 @@ export interface CLIArgs {
   host?: string;
   sessionsDir?: string;
   logLevel?: LogLevel;
+  harness?: HarnessType;
   mode?: string;
   timeoutSeconds?: number;
   allowTools?: string;
@@ -40,6 +41,8 @@ export function parseArgs(argv: string[]): CLIArgs {
       args.sessionsDir = argv[++i];
     } else if (arg === "--log-level" && argv[i + 1]) {
       args.logLevel = argv[++i] as LogLevel;
+    } else if (arg === "--harness" && argv[i + 1]) {
+      args.harness = argv[++i] as HarnessType;
     } else if (arg === "--mode" && argv[i + 1]) {
       args.mode = argv[++i];
     } else if (arg === "--timeout" && argv[i + 1]) {
@@ -76,6 +79,7 @@ export function createConfigFromArgs(args: CLIArgs): BridgeConfig {
   const config: BridgeConfig = {
     sessionsDir: args.sessionsDir || "~/.claude/sessions",
     logLevel,
+    harness: args.harness,
     defaultMode: (args.mode as any) || "plan",
     timeoutSeconds: args.timeoutSeconds || 30,
     maxConcurrentSessions: 10,
@@ -199,6 +203,7 @@ OPTIONS:
   --port <number>          Port for HTTP/WebSocket transports [default: 3000]
   --host <hostname>        Host for HTTP/WebSocket transports [default: localhost]
   --sessions-dir <path>    Sessions directory [default: ~/.claude/sessions]
+  --harness <type>         Harness type (claude-code, codex, opencode) [default: claude-code]
   --log-level <level>      Log level (debug, info, warn, error) [default: info]
   --mode <mode>            Default session mode (plan, auto, full) [default: plan]
   --timeout <seconds>      Default session timeout in seconds [default: 30]

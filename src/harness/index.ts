@@ -3,3 +3,4 @@
  */
 
 export { ClaudeCodeHarness } from "./claude-code.js";
+export { CodexHarness } from "./codex.js";

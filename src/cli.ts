@@ -7,7 +7,7 @@
  */
 
 import { SessionManager } from "./session/manager.js";
-import { ClaudeCodeHarness } from "./harness/claude-code.js";
+import { ClaudeCodeHarness, CodexHarness } from "./harness/index.js";
 import { createServer } from "./server.js";
 import { parseArgs, createConfigFromArgs, validateConfig } from "./config.js";
 import { initLogger, getLogger } from "./utils/logger.js";
@@ -40,8 +40,13 @@ async function main(): Promise<void> {
       process.exit(1);
     }
 
-    // Create harness adapter
-    const harness = new ClaudeCodeHarness();
+    // Create harness adapter based on configuration
+    const harnessType = config.harness || "claude-code";
+    const harness = harnessType === "codex"
+      ? new CodexHarness()
+      : new ClaudeCodeHarness();
+
+    logger.info(`Using harness: ${harnessType}`);
 
     // Create session manager with configuration
     const manager = new SessionManager(harness, config.sessionsDir || "~/.claude/sessions", {

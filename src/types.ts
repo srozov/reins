@@ -51,6 +51,12 @@ export interface SessionStartConfig {
   timeoutSeconds?: number;
   /** Additional CLI arguments to pass to the harness command */
   claudeArgs?: string[];
+  /** API key for authentication (e.g., CODEX_API_KEY) */
+  apiKey?: string;
+  /** Environment variables to pass to the harness process */
+  env?: Record<string, string>;
+  /** Initial prompt to send when starting the session (alternative to prompt) */
+  initialPrompt?: string;
 }
 
 /**
