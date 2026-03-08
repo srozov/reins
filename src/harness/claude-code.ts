@@ -1,98 +1,97 @@
 /**
  * Claude Code Harness Adapter
- * 
- * Supports flexible CLI arguments - callers can override defaults via claudeArgs
+ *
+ * Claude Code CLI is one-shot: `claude -p` takes a prompt, outputs JSON, exits.
+ * Each interaction spawns a fresh process; sessions are resumed via `--resume`.
  */
 
-import { spawn, ChildProcess } from "child_process";
+import { spawn } from "child_process";
 import { IHarness, HarnessProcess, SessionStartConfig, Mode } from "../types.js";
 
+/**
+ * Run `claude -p` with the given args, write input to stdin, and parse the JSON response.
+ */
+async function runClaude(
+  args: string[],
+  input: string,
+  cwd?: string
+): Promise<{ result: string; sessionId: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("claude", args, {
+      cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    if (!child.pid) {
+      reject(new Error("Failed to spawn Claude Code process"));
+      return;
+    }
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (d: Buffer) => { stdout += d.toString(); });
+    child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+
+    child.stdin?.write(input + "\n");
+    child.stdin?.end();
+
+    child.on("exit", (code) => {
+      const parsed = parseClaudeOutput(stdout);
+      if (parsed) {
+        resolve(parsed);
+        return;
+      }
+      reject(new Error(`Claude Code failed (exit ${code}): ${stderr || stdout}`));
+    });
+  });
+}
+
+function parseClaudeOutput(stdout: string): { result: string; sessionId: string } | null {
+  // Claude outputs one JSON object per line; find the last one with result + session_id
+  const lines = stdout.trim().split("\n").filter(l => l.trim().startsWith("{"));
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(lines[i]);
+      if (parsed.result !== undefined && parsed.session_id) {
+        const result = typeof parsed.result === "string"
+          ? parsed.result
+          : JSON.stringify(parsed.result);
+        return { result, sessionId: parsed.session_id };
+      }
+    } catch {
+      // Not valid JSON, skip
+    }
+  }
+  return null;
+}
+
 export class ClaudeCodeProcess implements HarnessProcess {
-  processId: number;
+  processId: number = 0;
   sessionId: string;
   mode: Mode;
-  private process: ChildProcess;
-  private buffer: string = "";
+  private workdir: string;
 
-  constructor(process: ChildProcess, sessionId: string, mode: Mode) {
-    this.process = process;
-    this.processId = process.pid || 0;
+  constructor(sessionId: string, mode: Mode, workdir: string) {
     this.sessionId = sessionId;
     this.mode = mode;
+    this.workdir = workdir;
   }
 
   async send(message: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      if (!this.process.stdin) {
-        reject(new Error("Process stdin is not available"));
-        return;
-      }
-
-      let responseTimeout: NodeJS.Timeout | null = null;
-
-      const listener = (data: Buffer) => {
-        this.buffer += data.toString();
-      };
-
-      this.process.stdout?.on("data", listener);
-
-      // Send message and close stdin
-      this.process.stdin.write(message + "\n");
-      this.process.stdin.end();
-
-      // Wait for and parse response
-      const parseResponse = (): boolean => {
-        // Look for JSON object in buffer
-        const jsonMatch = this.buffer.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            const parsed = JSON.parse(jsonMatch[0]);
-            
-            // Capture session_id from Claude Code response
-            if (parsed.session_id && !this.sessionId.startsWith('session-')) {
-              (this as any).sessionId = parsed.session_id;
-            }
-            
-            if (parsed.result !== undefined) {
-              if (responseTimeout) clearTimeout(responseTimeout);
-              this.process.stdout?.removeListener("data", listener);
-              const response = typeof parsed.result === 'string' ? parsed.result : JSON.stringify(parsed.result);
-              this.buffer = "";
-              resolve(response);
-              return true;
-            }
-          } catch {
-            // Not valid JSON yet, continue collecting
-          }
-        }
-        return false;
-      };
-
-      if (parseResponse()) return;
-
-      const pollInterval = setInterval(() => {
-        if (parseResponse()) {
-          clearInterval(pollInterval);
-        }
-      }, 50);
-
-      responseTimeout = setTimeout(() => {
-        clearInterval(pollInterval);
-        this.process.stdout?.removeListener("data", listener);
-        this.process.kill();
-        reject(new Error("Claude Code process timeout"));
-      }, 60000);
-    });
+    const { result } = await runClaude(
+      ["-p", "--output-format", "json", "--dangerously-skip-permissions", "--resume", this.sessionId],
+      message,
+      this.workdir
+    );
+    return result;
   }
 
   async approve(corrections?: string): Promise<void> {
-    if (!this.process.stdin) {
-      throw new Error("Process stdin is not available");
-    }
-    if (corrections) {
-      this.process.stdin.write(corrections + "\n");
-      this.process.stdin.end();
-    }
+    const message = corrections
+      ? `${corrections}\nPlease proceed with executing the plan.`
+      : "Approved. Please proceed with executing the plan.";
+    await this.send(message);
+    this.mode = "auto";
   }
 
   async read(): Promise<Array<{ role: "user" | "assistant"; content: string }>> {
@@ -100,7 +99,7 @@ export class ClaudeCodeProcess implements HarnessProcess {
   }
 
   async kill(): Promise<void> {
-    this.process.kill();
+    // No long-running process; one-shot processes exit on their own
   }
 }
 
@@ -111,80 +110,35 @@ export class ClaudeCodeHarness implements IHarness {
     const mode = config.mode || "plan";
     const args = this.buildArgs(config, mode);
 
-    const childProcess = spawn("claude", args, {
-      cwd: config.workdir,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    if (!childProcess.pid) {
-      throw new Error("Failed to spawn Claude Code process");
-    }
-
-    const sessionId = `session-${Date.now()}`;
-    return new ClaudeCodeProcess(childProcess, sessionId, mode);
+    const { sessionId } = await runClaude(args, config.prompt, config.workdir);
+    return new ClaudeCodeProcess(sessionId, mode, config.workdir);
   }
 
   async resume(sessionId: string, config: Partial<SessionStartConfig>): Promise<HarnessProcess> {
     const mode = (config.mode as Mode) || "auto";
     const workdir = config.workdir || process.cwd();
-
-    // Build args - caller can override with claudeArgs
-    const customArgs = config.claudeArgs || [];
-    
-    // Default resume args
-    const defaultArgs = [
-      "-p",
-      "--output-format", "json",
-      "--dangerously-skip-permissions",
-      "--resume", sessionId
-    ];
-
-    // Merge: custom args override defaults
-    // If caller provides claudeArgs, use those instead of defaults
-    const args = customArgs.length > 0 ? customArgs : defaultArgs;
-
-    const childProcess = spawn("claude", args, {
-      cwd: workdir,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    if (!childProcess.pid) {
-      throw new Error("Failed to spawn Claude Code process");
-    }
-
-    return new ClaudeCodeProcess(childProcess, sessionId, mode);
+    return new ClaudeCodeProcess(sessionId, mode, workdir);
   }
 
-  async kill(processId: number): Promise<void> {
-    try {
-      process.kill(processId);
-    } catch {
-      // Process might already be dead
-    }
+  async kill(_processId: number): Promise<void> {
+    // No-op: one-shot processes exit on their own
   }
 
   /**
-   * Build CLI arguments for starting a new session
-   * 
-   * Order matters:
-   * 1. Base args: --permission-mode, --output-format
-   * 2. Model (if specified)
-   * 3. Custom args (if provided by caller)
+   * Build CLI args for starting a new session.
+   * `-p` puts Claude in print (one-shot) mode; permission is set via `--permission-mode`.
    */
   private buildArgs(config: SessionStartConfig, mode: Mode): string[] {
     const args: string[] = [
-      "--permission-mode",
-      mode,
-      "--output-format",
-      "json",
+      "-p",
+      "--permission-mode", mode,
+      "--output-format", "json",
     ];
 
     if (config.model) {
       args.push("--model", config.model);
     }
 
-    // Allow caller to override with custom args
-    // These are appended last and can override previous args
     if (config.claudeArgs && config.claudeArgs.length > 0) {
       args.push(...config.claudeArgs);
     }

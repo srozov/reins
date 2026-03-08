@@ -156,12 +156,12 @@ export class CodexProcess implements HarnessProcess {
         this.process.stdin.once("drain", () => {
           logger.debug("Stdin drained");
           // Close stdin after drain for non-interactive mode
-          this.process.stdin.end();
+          this.process.stdin?.end();
           this.stdinClosed = true;
         });
       } else {
         // Close stdin after successful write
-        this.process.stdin.end();
+        this.process.stdin?.end();
         this.stdinClosed = true;
       }
 

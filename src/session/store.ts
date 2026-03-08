@@ -1,9 +1,11 @@
 /**
  * Session Store - Reads from Claude Code's native session format
- * 
+ *
  * Claude Code stores sessions in:
- * - Index: ~/.claude/projects/<path>/sessions-index.json
- * - Session files: ~/.claude/projects/<path>/<sessionId>.jsonl
+ *   ~/.claude/projects/<encoded-path>/<sessionId>.jsonl
+ *
+ * We scan .jsonl files directly — reliable for all session types including
+ * those created via `claude -p` which are not added to sessions-index.json.
  */
 
 import { existsSync, readFileSync, readdirSync } from "fs";
@@ -13,159 +15,138 @@ import { getLogger } from "../utils/logger.js";
 
 const logger = getLogger("session-store");
 
+/**
+ * Parse a Claude Code native JSONL session file into SessionState.
+ */
+function parseSessionFile(sessionId: string, filePath: string): SessionState | null {
+  try {
+    const lines = readFileSync(filePath, "utf-8")
+      .split("\n")
+      .filter(l => l.trim().startsWith("{"));
+
+    let workdir = "/tmp";
+    let createdAt = "";
+    let lastActive = "";
+    const transcript: Array<{ role: "user" | "assistant"; content: string }> = [];
+
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+
+        if (entry.cwd) workdir = entry.cwd;
+        if (entry.timestamp) {
+          if (!createdAt || entry.timestamp < createdAt) createdAt = entry.timestamp;
+          if (!lastActive || entry.timestamp > lastActive) lastActive = entry.timestamp;
+        }
+
+        // User messages
+        if (entry.type === "user" && entry.message?.role === "user") {
+          const content = entry.message.content;
+          const text = typeof content === "string"
+            ? content.trim()
+            : Array.isArray(content)
+              ? (content.find((c: { type: string }) => c.type === "text") as { text: string } | undefined)?.text?.trim() ?? ""
+              : "";
+          if (text) transcript.push({ role: "user", content: text });
+        }
+
+        // Assistant messages — Claude streams multiple entries per turn (thinking, then text).
+        // Replace the last assistant entry with the latest text block to deduplicate.
+        if (entry.type === "assistant" && Array.isArray(entry.message?.content)) {
+          const textBlock = (entry.message.content as Array<{ type: string; text?: string }>)
+            .find(c => c.type === "text");
+          if (textBlock?.text) {
+            const last = transcript[transcript.length - 1];
+            if (last?.role === "assistant") {
+              last.content = textBlock.text;
+            } else {
+              transcript.push({ role: "assistant", content: textBlock.text });
+            }
+          }
+        }
+      } catch {
+        // Skip unparseable lines
+      }
+    }
+
+    const now = new Date().toISOString();
+    return {
+      sessionId,
+      workdir,
+      mode: "plan",
+      status: "active",
+      createdAt: createdAt || now,
+      lastActive: lastActive || now,
+      transcript,
+      fileChanges: [],
+    };
+  } catch {
+    return null;
+  }
+}
+
 export class SessionStore {
-  private sessionsDir: string;
+  private projectDir: string;
+  private projectsDir: string;
 
   constructor(sessionsDir: string = "~/.claude/sessions") {
-    this.sessionsDir = sessionsDir.replace("~", process.env.HOME || "~");
+    const resolved = sessionsDir.replace("~", process.env.HOME || "~");
+    this.projectsDir = join(resolved, "..", "projects");
+
+    // Scope list() to the current working directory's Claude Code project dir.
+    // Claude Code encodes the path by replacing '/' and '.' with '-'.
+    const encodedCwd = process.cwd().replace(/[/.]/g, "-");
+    this.projectDir = join(this.projectsDir, encodedCwd);
+
+    logger.debug(`Session store scoped to: ${this.projectDir}`);
   }
 
   /**
-   * List all native Claude Code sessions
+   * List sessions for the current project by scanning .jsonl files directly.
    */
   list(): SessionState[] {
     const sessions: SessionState[] = [];
 
-    // Try to find sessions index
-    const projectsDir = join(this.sessionsDir, "..", "projects");
-    
-    if (existsSync(projectsDir)) {
-      const projectDirs = readdirSync(projectsDir);
-      
-      for (const projectDir of projectDirs) {
-        const indexFile = join(projectsDir, projectDir, "sessions-index.json");
-        
-        if (existsSync(indexFile)) {
-          try {
-            const index = JSON.parse(readFileSync(indexFile, "utf-8"));
-            
-            if (index.entries && Array.isArray(index.entries)) {
-              for (const entry of index.entries) {
-                const sessionFile = entry.fullPath;
-                
-                if (existsSync(sessionFile)) {
-                  try {
-                    const lines = readFileSync(sessionFile, "utf-8").split("\n").filter(l => l.trim());
-                    
-                    // Get first user message from session
-                    let firstUserMessage = "";
-                    let assistantResponse = "";
-                    
-                    for (const line of lines) {
-                      try {
-                        const parsed = JSON.parse(line);
-                        if (parsed.type === "user" && parsed.message?.content) {
-                          if (!firstUserMessage) {
-                            firstUserMessage = parsed.message.content;
-                          }
-                        }
-                        if (parsed.type === "assistant" && parsed.message?.content) {
-                          // Get the actual text content
-                          const content = parsed.message.content;
-                          if (Array.isArray(content)) {
-                            assistantResponse = content.find((c: any) => c.type === "text")?.text || "";
-                          } else if (typeof content === "string") {
-                            assistantResponse = content;
-                          }
-                        }
-                      } catch {
-                        // Skip invalid JSON lines
-                      }
-                    }
-
-                    sessions.push({
-                      sessionId: entry.sessionId,
-                      workdir: entry.projectPath || "/tmp",
-                      mode: "plan",
-                      status: "active",
-                      createdAt: entry.created,
-                      lastActive: entry.modified,
-                      transcript: firstUserMessage ? [
-                        { role: "user" as const, content: firstUserMessage },
-                        ...(assistantResponse ? [{ role: "assistant" as const, content: assistantResponse }] : [])
-                      ] : [],
-                      fileChanges: [],
-                    });
-                  } catch (err) {
-                    logger.warn(`Failed to read session file: ${sessionFile}`);
-                  }
-                }
-              }
-            }
-          } catch (err) {
-            logger.warn(`Failed to parse sessions index: ${indexFile}`);
-          }
-        }
-      }
+    if (!existsSync(this.projectDir)) {
+      logger.warn(`Project sessions dir not found: ${this.projectDir}`);
+      return sessions;
     }
 
-    // Also check for sessions in ~/.claude/sessions directly
-    if (existsSync(this.sessionsDir)) {
-      const files = readdirSync(this.sessionsDir);
-      
-      for (const file of files) {
-        // Skip .sessions.jsonl (old format)
-        if (file.startsWith(".") || file.endsWith(".jsonl")) continue;
-        
-        if (file.endsWith(".json")) {
-          const sessionFile = join(this.sessionsDir, file);
-          try {
-            const content = readFileSync(sessionFile, "utf-8");
-            const parsed = JSON.parse(content);
-            const sessionId = parsed.id || basename(sessionFile, ".json");
-            
-            // Check if we already have this session
-            if (!sessions.find(s => s.sessionId === sessionId)) {
-              sessions.push({
-                sessionId,
-                workdir: parsed.workdir || "/tmp",
-                mode: parsed.mode || "plan",
-                status: "active",
-                createdAt: parsed.createdAt || new Date().toISOString(),
-                lastActive: parsed.lastActive || new Date().toISOString(),
-                transcript: parsed.transcript || [],
-                fileChanges: [],
-              });
-            }
-          } catch (err) {
-            logger.warn(`Failed to read session: ${sessionFile}`);
-          }
-        }
-      }
+    for (const file of readdirSync(this.projectDir)) {
+      if (!file.endsWith(".jsonl")) continue;
+      const sessionId = basename(file, ".jsonl");
+      const state = parseSessionFile(sessionId, join(this.projectDir, file));
+      if (state) sessions.push(state);
     }
 
-    // Sort by lastActive descending
     sessions.sort((a, b) => new Date(b.lastActive).getTime() - new Date(a.lastActive).getTime());
-    
     logger.debug(`Found ${sessions.length} sessions`);
     return sessions;
   }
 
   /**
-   * Get a specific session
+   * Get a specific session by ID — searches all project dirs, not just the current one.
    */
   get(sessionId: string): SessionState | null {
-    const sessions = this.list();
-    return sessions.find(s => s.sessionId === sessionId) || null;
+    if (!existsSync(this.projectsDir)) return null;
+
+    for (const projectDir of readdirSync(this.projectsDir)) {
+      const filePath = join(this.projectsDir, projectDir, `${sessionId}.jsonl`);
+      if (existsSync(filePath)) {
+        return parseSessionFile(sessionId, filePath);
+      }
+    }
+    return null;
   }
 
-  /**
-   * Add a message to a session (noop for native sessions)
-   */
   addMessage(_sessionId: string, _message: { role: "user" | "assistant"; content: string }): void {
     // Cannot modify native Claude Code sessions
   }
 
-  /**
-   * Create a new session (noop - harness manages this separately)
-   */
   create(_state: Omit<SessionState, "sessionId">): SessionState {
     throw new Error("Use SessionManager.create() instead");
   }
 
-  /**
-   * Update a session (noop for native sessions)
-   */
   update(_sessionId: string, _updates: Partial<SessionState>): SessionState | null {
     return null;
   }

@@ -50,7 +50,7 @@ The name reflects:
 ## Installation
 
 ```bash
-npm install @agi01/reins
+npm install -g @agi01/reins
 ```
 
 ## Usage

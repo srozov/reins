@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "reins": {
+      "type": "local",
+      "command": [
+        "npx",
+        "-y",
+        "reins"
+      ]
+    }
+  }
+}
